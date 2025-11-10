@@ -1,14 +1,17 @@
-name: Build and Publish Docker Image
+name: Build, Scan, and Publish Docker Image
+
 on:
   push:
     branches: [ "main" ]
 
 jobs:
-  build-and-publish:
+  build-scan-and-publish:
     runs-on: ubuntu-latest
+
     permissions:
       contents: read
       packages: write
+      security-events: write
 
     steps:
       - name: Check out repository
@@ -20,14 +23,35 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-          
+
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
+          
+      - name: Build Docker image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          load: true 
 
-      - name: Build and push Docker image
+      - name: Scan image for vulnerabilities
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.meta.outputs.tags }}
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+          sarif-ref: 'refs/heads/main'
+          
+      - name: Push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
